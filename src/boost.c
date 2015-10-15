@@ -298,6 +298,8 @@ void ADC1_2_IRQHandler(void)
 		//Toma o resultado da conversao A/D
 		vfbVal = vfbScale * (float)ADC_GetConversionValue(ADC1);
 	}
+
+
 /*
 	else
 	{
