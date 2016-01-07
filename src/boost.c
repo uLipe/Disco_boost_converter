@@ -27,7 +27,7 @@
 
 
 #define BOOST_PWM_PORT       GPIOA      //
-#define BOOST_HRTIM_LOAD_VAL(x) 	(x == 0?0:((SystemCoreClock/x) * 64)) //VAlor de recarga do HRTIM
+#define BOOST_HRTIM_LOAD_VAL(x) 	((x == 0?0:((SystemCoreClock/x) * 64))) //VAlor de recarga do HRTIM
 
 //
 // sobre o VFB apenas em modo closed loop:
@@ -43,11 +43,46 @@
 #define BOOST_HALT 0x00000002
 #define BOOST_OFF  0x00000008
 
+
+//
+// Limites de operacao da arimetica usada no controle:
+//
+#define PID_MAX_VAL  45.0f
+#define PID_MIN_VAL -45.0f
+
+//
+// Mapeia a saida do controle PID de -32.0f <---> +32.0f para
+// Controlador PWM entre 0 - 18K
+//
+#define MAX_PWM    16384.0f
+#define MIN_PWM    16.3f
+
+
+#define MAP_SCALE  ((MAX_PWM - MIN_PWM) / (PID_MAX_VAL - 0.0f))
+#define MAP_TO_PWM(x) (uint16_t)((x + 0.1f) * MAP_SCALE)
+
+
+
+//
+// Rampa de subida do softstart:
+//
+#define BOOST_RAMP_TIME  20 //Hz
+#define BOOST_RAMP_TICKS BOOST_SW_FREQ
+#define BOOST_TICKS_PER_TIME (BOOST_RAMP_TICKS / BOOST_RAMP_TIME)
+#define BOOST_SOFT_START_PWM_PERCENT ((50.0f/100.0f) * MAX_PWM)
+
+
+#define BOOST_SOFT_START_PWM_INC (uint16_t)(((BOOST_SOFT_START_PWM_PERCENT) \
+											 / BOOST_TICKS_PER_TIME) + 1.0f )
+
+
+#define BOOST_SOFT_START_PWM_VAL (uint16_t)BOOST_SOFT_START_PWM_PERCENT
+
 //
 // Variaveis estaticas:
 //
 static float transferRatio = 0.0f;
-static float vfbScale      = 1.0f;
+static const float vfbScale   = 3.1187e-3f; // Scale = (Vref / ADC_Steps) * Vbus to Vfb ratio
 static float inVoltage  = 0.0f;
 static float outVoltage  = 0.0f;
 static float vfbVal      = 0.0f;
@@ -56,16 +91,21 @@ static float vfbVal      = 0.0f;
 static uint16_t dutyCicle  = 0;
 static uint32_t boostFlags = BOOST_OFF;
 static uint32_t adcStep = 0;
+static bool  inSoftStart = false;
+
+
+
 
 struct loopcontrolwork
 {
 	float *pfeed;
 	float *perr;
-	float *pAcoeff;
-	float *pBCoeff;
-	float *pxn;
-	float *pyn;
-	int16_t *pOut;
+	float *kp;
+	float *ki;
+	float *kd;
+	float *integrator;
+	float *prevError;
+	float *pOut;
 };
 
 
@@ -73,11 +113,12 @@ struct loopcontrolwork
 //variaveis da malha de controle:
 struct loopcontrolwork loopwork;
 
-float a_n[3] = {0.0f,0.0f,0.0f};
-float b_n[3] = {0.0f,0.0f,0.0f};
-float x_n[4] = {0.0f,0.0f,0.0f, 0.0f};
-float y_n[4] = {0.0f,0.0f,0.0f, 0.0f};
-int16_t output = 0;
+float kp = 0.0f;
+float ki = 0.0f;
+float kd = 0.0f;
+float integrator = 0.0f;
+float prevError = 0.0f;
+float output = 0;
 
 
 //
@@ -85,8 +126,10 @@ int16_t output = 0;
 //
 
 #if BOOST_CTL_TYPE == 1
+
 extern void DigitalPowerLoopFunc(void);
 void DigitalPowerLoopSetCoef(float kp, float ki, float kd);
+
 #endif
 
 void Boost_HW_SetAnalog(void);
@@ -153,20 +196,25 @@ void Boost_HW_SetAnalog(void)
 	adcInit.ADC_ExternalTrigEventEdge = ADC_ExternalTrigInjecEventEdge_None;
 	adcInit.ADC_AutoInjMode = ADC_AutoInjec_Disable;
 	adcInit.ADC_ContinuousConvMode = ADC_ContinuousConvMode_Disable;
-	adcInit.ADC_DataAlign = ADC_DataAlign_Left;
+	adcInit.ADC_DataAlign = ADC_DataAlign_Right;
 	adcInit.ADC_Resolution = ADC_Resolution_12b;
 	adcInit.ADC_NbrOfRegChannel = 1;
 
 	// Prepara o sequencer:
+	ADC_DeInit(ADC1);
 	ADC_CommonInit(ADC1, &adcCommon);
 	ADC_Init(ADC1, &adcInit);
 	ADC_RegularChannelSequencerLengthConfig(ADC1,1);
 	ADC_RegularChannelConfig(ADC1, ADC_Channel_4, 1,ADC_SampleTime_1Cycles5 );
-/*
-	ADC_RegularChannelConfig(ADC1, ADC_Channel_2, 2,ADC_SampleTime_1Cycles5 );
- */
+
 	// ADC Pronto para rodar.
-	ADC_VoltageRegulatorCmd(ADC1, ENABLE);
+	//ADC_VoltageRegulatorCmd(ADC1, ENABLE);
+
+	uint32_t i = 0;
+
+	//Aguarda o vreg estabilizar.
+	for( i = 0 ; i < 0x7FFF; i++);
+
 	ADC_Cmd(ADC1, ENABLE);
 }
 
@@ -208,20 +256,20 @@ void Boost_HW_SetPwm(void)
 
 	//COnfigura o HRTIM para obter-se uma saida pushpull em pwmH e L:
 	// OBS usamos o timer B
-	HRTIM1->HRTIM_MASTER.MCR  = 0x00000000;
-	HRTIM1->HRTIM_MASTER.MPER = BOOST_HRTIM_LOAD_VAL(BOOST_SW_FREQ);
-	HRTIM1->HRTIM_TIMERx[1].TIMxCR = 0x00000000 | ( 1 << 3);
-	HRTIM1->HRTIM_TIMERx[1].PERxR  = BOOST_HRTIM_LOAD_VAL(BOOST_SW_FREQ); //Acerta o periodo
-	HRTIM1->HRTIM_TIMERx[1].CMP1xR = 0;
-	HRTIM1->HRTIM_TIMERx[1].SETx1R = (1 << 2);
-	HRTIM1->HRTIM_TIMERx[1].RSTx1R = (1 << 3);
+	HRTIM1->HRTIM_MASTER.MCR  = 0x00000000;								  //desliga o HRTIM
+	HRTIM1->HRTIM_MASTER.MPER = BOOST_HRTIM_LOAD_VAL(BOOST_SW_FREQ);	  //Periodo do master timer
+	HRTIM1->HRTIM_TIMERx[1].TIMxCR = 0x00000000 | ( 1 << 3);			  //MOdo de operacao como output compare e em push-pull
+	HRTIM1->HRTIM_TIMERx[1].PERxR  = BOOST_HRTIM_LOAD_VAL(BOOST_SW_FREQ); //TPWM em hertz acertado
+	HRTIM1->HRTIM_TIMERx[1].CMP1xR = MAP_TO_PWM(32.0f);				  //Duty cicle minimo
+	HRTIM1->HRTIM_TIMERx[1].SETx1R = (1 << 2);							  //acerta evento de set
+	HRTIM1->HRTIM_TIMERx[1].RSTx1R = (1 << 3);							  //e evento de reset
 	//HRTIM1->HRTIM_TIMERx[1].SETx2R = (1 << 2);
 	//HRTIM1->HRTIM_TIMERx[1].RSTx2R = (1 << 3);
-	HRTIM1->HRTIM_TIMERx[1].DTxR  =  (230 << 16) | (230 << 0);
-	HRTIM1->HRTIM_TIMERx[1].OUTxR  = (1 << 8);
-	HRTIM1->HRTIM_COMMON.OENR      = (1 << 2) | (1 << 3);//habilita as saidas PWM.
+	HRTIM1->HRTIM_TIMERx[1].DTxR  =  (250 << 16) | (250 << 0) | (0x01 << 10);			  //acerta o dead time para 20ns (obtido experim.)
+	HRTIM1->HRTIM_TIMERx[1].OUTxR  = (1 << 8);							  //acerta o sistema de push pull
+	HRTIM1->HRTIM_COMMON.OENR      = (1 << 2) | (1 << 3);				  //habilita as saidas PWM.
 
-	HRTIM1->HRTIM_MASTER.MCR  = 0x003F0008; //Habilita o master timer
+	HRTIM1->HRTIM_MASTER.MCR  = 0x003F0008; 							  //Habilita o master timer
 }
 
 //
@@ -239,10 +287,6 @@ void Boost_HW_SetInterrupts(void)
 
 	//Aciona a interrupcao do ADC:
 	ADC_ITConfig(ADC1, ADC_IT_EOC,ENABLE);
-
-
-    NVIC_EnableIRQ(HRTIM1_TIMB_IRQn);
-    NVIC_EnableIRQ(ADC1_2_IRQn);
 }
 
 //
@@ -269,19 +313,105 @@ void BoostError(errorcode err)
 	}
 }
 
+
+//
+// DigitalPowerLoopSetCoef()
+//
+#if BOOST_CTL_TYPE == 1
+void DigitalPowerLoopSetCoef(float _kp, float _ki, float _kd)
+{
+
+	integrator = 0.0f;
+	prevError  = 0.0f;
+
+	//prepara o set de coeficientes:
+	kp = _kp;
+	ki = _ki;
+	kd = _kd;
+
+
+	//liga a array de estados nos nodes da funcao de controle:
+	loopwork.pOut    = &output;
+	loopwork.perr    = &outVoltage;
+	loopwork.pfeed   = &vfbVal;
+
+	loopwork.kp = &kp;
+	loopwork.ki = &ki;
+	loopwork.kd = &kd;
+	loopwork.integrator = &integrator;
+	loopwork.prevError = &prevError;
+
+}
+#endif
+
+//
+// DigitalPowerSaturate()
+//
+
+#if BOOST_CTL_TYPE == 1
+void DigitalPowerSaturate(void)
+{
+	//satura resultado:
+	if(output > PID_MAX_VAL) output = PID_MAX_VAL;
+	if(output < PID_MIN_VAL) output = PID_MIN_VAL;
+
+	//satura integrador:
+	if(integrator > PID_MAX_VAL) integrator = PID_MAX_VAL;
+	if(integrator < PID_MIN_VAL) integrator = PID_MIN_VAL;
+
+	//satura erro anterior:
+	if(prevError > PID_MAX_VAL) prevError = PID_MAX_VAL;
+	if(prevError < PID_MIN_VAL) prevError = PID_MIN_VAL;
+
+}
+#endif
+
+
 //
 // HTRIM ISR:
 //
 void HRTIM1_TIMB_IRQHandler(void)
 {
-	//Limpa o flag de interrupcao:
-	HRTIM_ClearITPendingBit(HRTIM1, 0x01, HRTIM_TIM_IT_RST);
 
+#if BOOST_CTL_TYPE == 1
+
+	if(true != inSoftStart)
+	{
+
+		//Roda a malha de controle:
+		DigitalPowerLoopFunc();
+
+		//Satura:
+		DigitalPowerSaturate();
+
+		if(output < 0.0f) output = 0.0f;
+
+		//Prepara o dutycicle para correcao no proximo ciclo:
+		dutyCicle = MAP_TO_PWM(output);
+	}
+	else
+	{
+		//
+		// Se o flag de subida suave estiver ativo, ignora a malha de
+		// controle:
+		//
+		dutyCicle += BOOST_SOFT_START_PWM_INC;
+		if(dutyCicle > BOOST_SOFT_START_PWM_VAL)
+		{
+			inSoftStart = false;
+		}
+
+	}
+#endif
 	//Dispara a leitura do conversor A/D:
 	ADC_StartConversion(ADC1);
 
 	//Atualiza novo DutyCicle calculado previamente:
 	Boost_HW_SetDutyCicle(dutyCicle);
+
+
+	//Limpa o flag de interrupcao:
+	HRTIM_ClearITPendingBit(HRTIM1, 0x01, 0xFFFFFFFF);
 }
 
 
@@ -290,65 +420,14 @@ void HRTIM1_TIMB_IRQHandler(void)
 //
 void ADC1_2_IRQHandler(void)
 {
-	if(adcStep == 0)
-	{
-		//Limpa fonte de interupcao:
-		ADC_ClearITPendingBit(ADC1, ADC_IT_EOC);
-
-		//Toma o resultado da conversao A/D
-		vfbVal = vfbScale * (float)ADC_GetConversionValue(ADC1);
-	}
+	//Limpa fonte de interupcao:
+	ADC_ClearITPendingBit(ADC1, ADC_IT_EOC);
 
 
-/*
-	else
-	{
-		ADC_ClearITPendingBit(ADC1, ADC_IT_EOC | ADC_IT_EOS);
-		inVoltage = vfbScale * (float)ADC_GetConversionValue(ADC1);
-		adcStep = 0;
-	}
-*/
-#if BOOST_CTL_TYPE == 1
+	//Toma o resultado da conversao A/D
+	vfbVal = vfbScale * (float)ADC_GetConversionValue(ADC1);
 
-	if(adcStep == 0)
-	{
-		//Roda a malha de controle:
-		DigitalPowerLoopFunc();
-
-		//Prepara o dutycicle para correcao no proximo ciclo:
-		dutyCicle += (uint16_t)( (int16_t)(0.5 * (float)BOOST_HRTIM_LOAD_VAL(BOOST_SW_FREQ)) +
-								loopwork.pOut);
-	}
-#endif
 }
-
-
-//
-// DigitalPowerLoopSetCoef()
-//
-#if BOOST_CTL_TYPE == 1
-void DigitalPowerLoopSetCoef(float kp, float ki, float kd)
-{
-	//prepara o set de coeficienets ax:
-	a_n[0] = -1.0f;
-	a_n[1] =  0.0f;
-	a_n[2] =  0.0f;
-
-	//preparar o set de coeficientes bx:
-	b_n[0] =  kp + ki + kd;
-	b_n[1] = -ki + (2.0f * kd);
-	b_n[2] =  kd;
-
-	//liga a array de estados nos nodes da funcao de controle:
-	loopwork.pAcoeff = &a_n[0];
-	loopwork.pBCoeff = &b_n[0];
-	loopwork.pOut    = &output;
-	loopwork.perr    = &inVoltage;
-	loopwork.pfeed   = &vfbVal;
-	loopwork.pxn     = &x_n[0];
-	loopwork.pyn     = &y_n[0];
-}
-#endif
 
 //
 // conversor boost, funcoes publicas:
@@ -359,6 +438,8 @@ void DigitalPowerLoopSetCoef(float kp, float ki, float kd)
 //
 void BoostInit(float inputVoltage, float outputVoltage)
 {
+
+
 	//
 	// Checa se a relacao Vo/Vi eh valida:
 	//
@@ -377,7 +458,7 @@ void BoostInit(float inputVoltage, float outputVoltage)
 		BoostError(err);
 	}
 
-
+#if BOOST_CTL_TYPE == 0
 
 	//
 	// Determina o duty cicle
@@ -388,8 +469,16 @@ void BoostInit(float inputVoltage, float outputVoltage)
 	inVoltage = inputVoltage;
 	outVoltage= outputVoltage;
 
-	//calcula a escala de conversao:
-	vfbScale = BOOST_MAX_VOLTAGE / 65536.0f;
+#else
+	//Malha fechada, seleciona o setpoint inicial
+	//E ignora a relacao VO/VI, sera compensado automaticamente.
+	//E configura o PID:
+	inVoltage  = inputVoltage;
+	outVoltage = outputVoltage;
+	if(inVoltage > BOOST_MAX_VOLTAGE) inVoltage = BOOST_MAX_VOLTAGE;
+
+	DigitalPowerLoopSetCoef(15.0, 0.80, 0.1);
+#endif
 
 	//
 	// Inicializa o hw do boost converter mas sem operar:
@@ -397,11 +486,6 @@ void BoostInit(float inputVoltage, float outputVoltage)
 	Boost_HW_SetAnalog();
 	Boost_HW_SetPwm();
 	Boost_HW_SetInterrupts();
-
-#if BOOST_CTL_TYPE == 1
-	DigitalPowerLoopSetCoef(1.0, 0.0, 0.0);
-#endif
-
 
 	//
 	// Sistema inicialmente em halt:
@@ -415,18 +499,32 @@ void BoostInit(float inputVoltage, float outputVoltage)
 //
 void BoostStart(void)
 {
+
+#if BOOST_CTL_TYPE == 0
+	Boost_HW_SetDutyCicle(dutyCicle);
+#else
+	const float tmp = 0.0f;
+	dutyCicle = MAP_TO_PWM(tmp);
+	Boost_HW_SetDutyCicle(dutyCicle);
+#endif
 	//
 	// Com o dutycicle pre calculado da um trigger no pwm
 	//
-
 	HRTIM1->HRTIM_MASTER.MCR = 0x003F0008;
 	Boost_HW_SetInterrupts();
-	Boost_HW_SetDutyCicle(dutyCicle);
 
 	//Libera VIN:
 	GPIO_SetBits(BOOST_PWM_PORT, BOOST_IN_PIN);
-
 	boostFlags = BOOST_RUN;
+
+
+	NVIC_SetPriority(HRTIM1_TIMB_IRQn, 250);
+	NVIC_SetPriority(ADC1_2_IRQn, 251);
+
+
+    NVIC_EnableIRQ(HRTIM1_TIMB_IRQn);
+    NVIC_EnableIRQ(ADC1_2_IRQn);
+
 }
 
 //
@@ -434,6 +532,7 @@ void BoostStart(void)
 //
 void BoostVoltageChange(float newVoltage)
 {
+
 	// Checa se a relacao Vo/Vi eh valida:
 	//
 	if(inVoltage > newVoltage)
@@ -451,17 +550,29 @@ void BoostVoltageChange(float newVoltage)
 		BoostError(err);
 	}
 
+
+#if BOOST_CTL_TYPE == 0	 //apenas calcula o dc em caso de malha aberta
+
 	//
 	// Recalcula parametros do boost:
 	//
 	transferRatio = 1.0f - (inVoltage / newVoltage);
 	dutyCicle = (uint16_t)(transferRatio * (float)BOOST_HRTIM_LOAD_VAL(BOOST_SW_FREQ));
+
+
+
+	//Malha fechada, o PID se encarrega disso:
 	outVoltage = newVoltage;
 
 	//
 	// Modifica tensao de saida:
 	//
 	Boost_HW_SetDutyCicle(dutyCicle);
+#else
+	//COntrole em malha fechada, apenas modifica o setpoint
+	//E ignora a relacao VO/VI, sera compensado por SW.
+	outVoltage = newVoltage;
+#endif
 
 }
 
@@ -493,6 +604,8 @@ void BoostHalt(void)
 	NVIC_DisableIRQ(ADC1_2_IRQn);
 
 	boostFlags = BOOST_HALT;
+	inSoftStart = false;
+	dutyCicle = 0;
 
 }
 

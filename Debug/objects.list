@@ -1,6 +1,6 @@
 startup/startup_stm32f334x8.o
-src/DigitalLoopController_Isr.o
 src/boost.o
+src/dpl.o
 src/main.o
 src/system_stm32f30x.o
 Utilities/stm32f3348_discovery.o

@@ -29,7 +29,7 @@
 								</outputEntries>
 							</builder>
 							<tool id="fr.ac6.managedbuild.tool.gnu.cross.c.compiler.327748472" name="MCU GCC Compiler" superClass="fr.ac6.managedbuild.tool.gnu.cross.c.compiler">
-								<option id="fr.ac6.managedbuild.gnu.c.compiler.option.optimization.level.1480038488" name="Optimization Level" superClass="fr.ac6.managedbuild.gnu.c.compiler.option.optimization.level" useByScannerDiscovery="false"/>
+								<option id="fr.ac6.managedbuild.gnu.c.compiler.option.optimization.level.1480038488" name="Optimization Level" superClass="fr.ac6.managedbuild.gnu.c.compiler.option.optimization.level" useByScannerDiscovery="false" value="fr.ac6.managedbuild.gnu.c.optimization.level.most" valueType="enumerated"/>
 								<option id="gnu.c.compiler.option.debugging.level.1831600006" name="Debug Level" superClass="gnu.c.compiler.option.debugging.level" useByScannerDiscovery="false" value="gnu.c.debugging.level.max" valueType="enumerated"/>
 								<option id="gnu.c.compiler.option.include.paths.609545428" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" useByScannerDiscovery="false" valueType="includePath">
 									<listOptionValue builtIn="false" value="C:/Users/felipeneves/workspace/Disco_boost_converter/inc"/>
@@ -70,6 +70,7 @@
 									<listOptionValue builtIn="false" value="C:/Users/felipeneves/workspace/Disco_boost_converter/CMSIS/device"/>
 									<listOptionValue builtIn="false" value="C:/Users/felipeneves/workspace/Disco_boost_converter/StdPeriph_Driver/inc"/>
 									<listOptionValue builtIn="false" value="C:/Users/felipeneves/workspace/Disco_boost_converter/Utilities"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/Disco_boost_converter/src}&quot;"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.assembler.input.1277137255" superClass="cdt.managedbuild.tool.gnu.assembler.input"/>
 								<inputType id="fr.ac6.managedbuild.tool.gnu.cross.assembler.input.56291187" superClass="fr.ac6.managedbuild.tool.gnu.cross.assembler.input"/>

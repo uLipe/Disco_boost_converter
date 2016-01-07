@@ -9,6 +9,7 @@
 #ifndef __BOOST_H
 #define __BOOST_H
 
+#include <stdbool.h>
 #include "stdint.h"
 
 //
@@ -17,7 +18,7 @@
 #define BOOST_SW_FREQ     			250000 	//Frequencia do PWM em HZ
 #define BOOST_MAX_VOLTAGE	   		15.0f 	//Maxima tensao do boost em [V]
 #define BOOST_VFB_MAX_VOLTAGE       2.98f    //Maxima tensao que pode ser lida pelo feed
-#define BOOST_CTL_TYPE              0      // 0 - openLoop
+#define BOOST_CTL_TYPE              1      // 0 - openLoop
 											// 1 - VMC closed loop
 
 //

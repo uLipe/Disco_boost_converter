@@ -31,6 +31,9 @@ src/main.d: ../src/main.c \
  C:/Users/felipeneves/workspace/Disco_boost_converter/StdPeriph_Driver/inc/stm32f30x_misc.h \
  C:/Users/felipeneves/workspace/Disco_boost_converter/Utilities/stm32f3348_discovery.h \
  C:/Users/felipeneves/workspace/Disco_boost_converter/StdPeriph_Driver/inc/stm32f30x_rcc.h \
+ C:/Users/felipeneves/workspace/Disco_boost_converter/StdPeriph_Driver/inc/stm32f30x_gpio.h \
+ C:/Users/felipeneves/workspace/Disco_boost_converter/StdPeriph_Driver/inc/stm32f30x_dac.h \
+ C:/Users/felipeneves/workspace/Disco_boost_converter/StdPeriph_Driver/inc/stm32f30x_adc.h \
  C:/Users/felipeneves/workspace/Disco_boost_converter/inc/boost.h
 
 C:/Users/felipeneves/workspace/Disco_boost_converter/CMSIS/device/stm32f30x.h:
@@ -96,5 +99,11 @@ C:/Users/felipeneves/workspace/Disco_boost_converter/StdPeriph_Driver/inc/stm32f
 C:/Users/felipeneves/workspace/Disco_boost_converter/Utilities/stm32f3348_discovery.h:
 
 C:/Users/felipeneves/workspace/Disco_boost_converter/StdPeriph_Driver/inc/stm32f30x_rcc.h:
+
+C:/Users/felipeneves/workspace/Disco_boost_converter/StdPeriph_Driver/inc/stm32f30x_gpio.h:
+
+C:/Users/felipeneves/workspace/Disco_boost_converter/StdPeriph_Driver/inc/stm32f30x_dac.h:
+
+C:/Users/felipeneves/workspace/Disco_boost_converter/StdPeriph_Driver/inc/stm32f30x_adc.h:
 
 C:/Users/felipeneves/workspace/Disco_boost_converter/inc/boost.h:
