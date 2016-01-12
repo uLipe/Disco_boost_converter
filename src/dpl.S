@@ -76,8 +76,8 @@ DigitalPowerLoopFunc:
 		@compute macs:
 		vsub.F32 s31,s31   @zero the acc;
 		vmla.F32 s31,s0,s2 @acc += kp * err
-		vmla.F32 s31,s6,s3 @acc += ki * integrator
-		vmla.F32 s31,s7,s4 @acc += kd * derivative
+		vmla.F32 s31,s5,s3 @acc += ki * integrator
+		vmla.F32 s31,s6,s4 @acc += kd * derivative
 
 
 		@stores the new output value:

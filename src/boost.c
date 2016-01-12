@@ -82,7 +82,7 @@
 // Variaveis estaticas:
 //
 static float transferRatio = 0.0f;
-static const float vfbScale   = 3.1187e-3f; // Scale = (Vref / ADC_Steps) * Vbus to Vfb ratio
+static const float vfbScale   = 3.662e-3f; // Scale = (Vref / ADC_Steps) * Vbus to Vfb ratio
 static float inVoltage  = 0.0f;
 static float outVoltage  = 0.0f;
 static float vfbVal      = 0.0f;
@@ -260,7 +260,7 @@ void Boost_HW_SetPwm(void)
 	HRTIM1->HRTIM_MASTER.MPER = BOOST_HRTIM_LOAD_VAL(BOOST_SW_FREQ);	  //Periodo do master timer
 	HRTIM1->HRTIM_TIMERx[1].TIMxCR = 0x00000000 | ( 1 << 3);			  //MOdo de operacao como output compare e em push-pull
 	HRTIM1->HRTIM_TIMERx[1].PERxR  = BOOST_HRTIM_LOAD_VAL(BOOST_SW_FREQ); //TPWM em hertz acertado
-	HRTIM1->HRTIM_TIMERx[1].CMP1xR = MAP_TO_PWM(32.0f);				  //Duty cicle minimo
+	HRTIM1->HRTIM_TIMERx[1].CMP1xR = MAP_TO_PWM(1.0f);				  //Duty cicle minimo
 	HRTIM1->HRTIM_TIMERx[1].SETx1R = (1 << 2);							  //acerta evento de set
 	HRTIM1->HRTIM_TIMERx[1].RSTx1R = (1 << 3);							  //e evento de reset
 	//HRTIM1->HRTIM_TIMERx[1].SETx2R = (1 << 2);
@@ -477,7 +477,7 @@ void BoostInit(float inputVoltage, float outputVoltage)
 	outVoltage = outputVoltage;
 	if(inVoltage > BOOST_MAX_VOLTAGE) inVoltage = BOOST_MAX_VOLTAGE;
 
-	DigitalPowerLoopSetCoef(15.0, 0.80, 0.1);
+	DigitalPowerLoopSetCoef(8.5f, 0.729f, 43.93);
 #endif
 
 	//

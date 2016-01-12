@@ -148,11 +148,11 @@ uint16_t GetUserAdc(void)
 int main(void)
 {
 	uint32_t scan = 0;
-	float userVoltage = 5.30f ;
+	float userVoltage = 5.10f ;
 
 
 	//Inicializa boost converter:
-	BoostInit(5.30f, userVoltage);
+	BoostInit(5.10f, userVoltage);
 
 
 	//Configura o botao da discovery para ser usado como controle
